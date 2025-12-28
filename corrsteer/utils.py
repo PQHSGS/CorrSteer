@@ -78,9 +78,19 @@ def fix_seed(seed: int = 42) -> int:
 
 
 def get_device() -> str:
-  device = "cuda" if torch.cuda.is_available() else "cpu"
+  device = "auto" if torch.cuda.is_available() else "cpu"
   device = "mps" if torch.backends.mps.is_available() else device
   return device
+
+
+def get_model_device(model: PreTrainedModel) -> torch.device:
+  """Get the device of the model's first parameter.
+  
+  When using device_map="auto", the model may be split across devices.
+  This returns the device of the first parameter, which is where input
+  tensors should typically be placed.
+  """
+  return next(model.parameters()).device
 
 
 def get_dims(llm: PreTrainedModel, sae: Optional[SAE] = None) -> tuple[int, int]:
@@ -104,7 +114,10 @@ def load_sae(
     release=model_config[model].release,
     sae_id=model_config[model].id_template.format(layer),
   )
-  return sae.to(device), cfg_dict, sparsity
+  # Only move to device if not "auto" - "auto" means device_map will handle it
+  if device != "auto":
+    sae = sae.to(device)
+  return sae, cfg_dict, sparsity
 
 
 def build_prompt(sample: SampleData, task: str, cot: bool = False, few_shots: Optional[List[SampleData]] = None) -> tuple[str, str]:

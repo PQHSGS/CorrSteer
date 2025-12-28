@@ -18,6 +18,7 @@ from corrsteer.utils import (
   load_model_tokenizer,
   build_prompt,
   get_device,
+  get_model_device,
   fix_seed,
   load_dataloaders,
   generate_options,
@@ -101,8 +102,10 @@ class EvalController:
     correct_answers = cast(list[str], correct_answers)
     prompts = cast(list[str], prompts)
     inputs = self.tokenizer(prompts, return_tensors="pt", padding=True, truncation=True)
-    input_ids = inputs.input_ids.to(device)
-    attention_mask = inputs.attention_mask.to(device)
+    # Get actual device from model when using device_map="auto"
+    actual_device = get_model_device(self.llm) if device == "auto" else device
+    input_ids = inputs.input_ids.to(actual_device)
+    attention_mask = inputs.attention_mask.to(actual_device)
 
     self.hook_handles = []
     for layer in layers:

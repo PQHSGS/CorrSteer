@@ -13,6 +13,7 @@ from corrsteer.utils import (
   load_model_tokenizer,
   load_dataloaders,
   get_device,
+  get_model_device,
   fix_seed,
   build_prompt,
   extract_answer,
@@ -125,8 +126,10 @@ class SFTController:
   @torch.no_grad()
   def _predict_batch(self, llm, tokenizer, prompts: List[str]) -> List[str]:
     inputs = tokenizer(prompts, return_tensors="pt", padding=True, truncation=True)
-    input_ids = inputs.input_ids.to(self.device)
-    attention_mask = inputs.attention_mask.to(self.device)
+    # Get actual device from model when using device_map="auto"
+    actual_device = get_model_device(llm) if self.device == "auto" else self.device
+    input_ids = inputs.input_ids.to(actual_device)
+    attention_mask = inputs.attention_mask.to(actual_device)
     option_tokens = None
     processor = None
     if getattr(self.cfg, "select_token", False):
@@ -183,6 +186,8 @@ class SFTController:
 
   def _sft_epoch(self, model, tokenizer, train_loader, steps: int, optim, scheduler, max_grad_norm: float = 1.0) -> int:
     model.train()
+    # Get actual device from model when using device_map="auto"
+    actual_device = get_model_device(model) if self.device == "auto" else self.device
     step_count = 0
     for sample in tqdm(train_loader, desc="SFT training"):
       prompt, target = get_supervised_pair(sample, self.cfg.task, cot=self.cfg.cot, few_shots=None)
@@ -191,10 +196,10 @@ class SFTController:
       prompt_with_delim = prompt + delim
       enc_prompt = tokenizer(prompt_with_delim, return_tensors="pt", padding=False, truncation=False, add_special_tokens=False)
       enc_target = tokenizer(target, return_tensors="pt", padding=False, truncation=False, add_special_tokens=False)
-      prompt_ids = enc_prompt.input_ids.to(self.device)
-      target_ids = enc_target.input_ids.to(self.device)
+      prompt_ids = enc_prompt.input_ids.to(actual_device)
+      target_ids = enc_target.input_ids.to(actual_device)
       input_ids = torch.cat([prompt_ids, target_ids], dim=1)
-      attention_mask = torch.ones_like(input_ids, device=self.device)
+      attention_mask = torch.ones_like(input_ids, device=actual_device)
       # Create labels: ignore prompt tokens, supervise exact target span
       labels = torch.full_like(input_ids, -100)
       labels[:, prompt_ids.shape[1]:] = target_ids
