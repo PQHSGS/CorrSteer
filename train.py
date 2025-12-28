@@ -17,6 +17,7 @@ from corrsteer.utils import (
   load_dataloaders,
   get_device,
   get_model_device,
+  get_layer_device,
   fix_seed,
   generate_options,
   get_logit_processor,
@@ -862,8 +863,7 @@ class CorrSteerController:
         sae, _, _ = load_sae(cfg.model, layer, self.device)
         # If device is "auto", move SAE to the same device as the corresponding model layer
         if self.device == "auto":
-          layer_device = llm.model.layers[layer].weight.device if hasattr(llm.model.layers[layer], 'weight') else next(llm.model.layers[layer].parameters()).device
-          sae = sae.to(layer_device)
+          sae = sae.to(get_layer_device(llm, layer))
         _, dict_size = get_dims(llm, sae)
         self.saes[layer] = sae
         feature_dim = dict_size

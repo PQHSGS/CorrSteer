@@ -19,6 +19,7 @@ from corrsteer.utils import (
   build_prompt,
   get_device,
   get_model_device,
+  get_layer_device,
   fix_seed,
   load_dataloaders,
   generate_options,
@@ -549,8 +550,7 @@ class EvalController:
           sae_loaded, _, _ = load_sae(model, layer_id, device)
           # If device is "auto", move SAE to the same device as the corresponding model layer
           if device == "auto":
-            layer_device = llm.model.layers[layer_id].weight.device if hasattr(llm.model.layers[layer_id], 'weight') else next(llm.model.layers[layer_id].parameters()).device
-            sae_loaded = sae_loaded.to(layer_device)
+            sae_loaded = sae_loaded.to(get_layer_device(llm, layer_id))
           self.saes[layer_id] = sae_loaded
         sae_inst = self.saes[layer_id]
         _, dict_size = get_dims(llm, sae_inst)
@@ -764,8 +764,7 @@ class EvalController:
           sae_loaded, _, _ = load_sae(model, layer_id, device)
           # If device is "auto", move SAE to the same device as the corresponding model layer
           if device == "auto":
-            layer_device = llm.model.layers[layer_id].weight.device if hasattr(llm.model.layers[layer_id], 'weight') else next(llm.model.layers[layer_id].parameters()).device
-            sae_loaded = sae_loaded.to(layer_device)
+            sae_loaded = sae_loaded.to(get_layer_device(llm, layer_id))
           self.saes[layer_id] = sae_loaded
           _, dict_size = get_dims(llm, sae_loaded)
           selected = layer_data["selected"]
@@ -785,8 +784,7 @@ class EvalController:
             sae_loaded, _, _ = load_sae(model, layer_id, device)
             # If device is "auto", move SAE to the same device as the corresponding model layer
             if device == "auto":
-              layer_device = llm.model.layers[layer_id].weight.device if hasattr(llm.model.layers[layer_id], 'weight') else next(llm.model.layers[layer_id].parameters()).device
-              sae_loaded = sae_loaded.to(layer_device)
+              sae_loaded = sae_loaded.to(get_layer_device(llm, layer_id))
             self.saes[layer_id] = sae_loaded
             _, dict_size = get_dims(llm, sae_loaded)
             top_feature = layer_data["analysis"][feature_list][0]
@@ -819,8 +817,7 @@ class EvalController:
         sae_loaded, _, _ = load_sae(model, best_layer, device)
         # If device is "auto", move SAE to the same device as the corresponding model layer
         if device == "auto":
-          layer_device = llm.model.layers[best_layer].weight.device if hasattr(llm.model.layers[best_layer], 'weight') else next(llm.model.layers[best_layer].parameters()).device
-          sae_loaded = sae_loaded.to(layer_device)
+          sae_loaded = sae_loaded.to(get_layer_device(llm, best_layer))
         self.saes[best_layer] = sae_loaded
         _, dict_size = get_dims(llm, sae_loaded)
         feat_idx = best_feature["feature_index"]
@@ -851,8 +848,7 @@ class EvalController:
           sae_loaded, _, _ = load_sae(model, layer_id, device)
           # If device is "auto", move SAE to the same device as the corresponding model layer
           if device == "auto":
-            layer_device = llm.model.layers[layer_id].weight.device if hasattr(llm.model.layers[layer_id], 'weight') else next(llm.model.layers[layer_id].parameters()).device
-            sae_loaded = sae_loaded.to(layer_device)
+            sae_loaded = sae_loaded.to(get_layer_device(llm, layer_id))
           self.saes[layer_id] = sae_loaded
           _, dict_size = get_dims(llm, sae_loaded)
         
@@ -1052,8 +1048,7 @@ class EvalController:
         sae_loaded, _, _ = load_sae(model, layer, device)
         # If device is "auto", move SAE to the same device as the corresponding model layer
         if device == "auto":
-          layer_device = llm.model.layers[layer].weight.device if hasattr(llm.model.layers[layer], 'weight') else next(llm.model.layers[layer].parameters()).device
-          sae_loaded = sae_loaded.to(layer_device)
+          sae_loaded = sae_loaded.to(get_layer_device(llm, layer))
         self.saes[layer] = sae_loaded
         _, dict_size = get_dims(llm, sae_loaded)
         print(f"Layer {layer}: Using feature {feat_idx} with coefficient {coeff:.4f}")

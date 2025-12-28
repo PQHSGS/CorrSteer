@@ -97,6 +97,19 @@ def get_model_device(model: PreTrainedModel) -> torch.device:
   return next(model.parameters()).device
 
 
+def get_layer_device(model: PreTrainedModel, layer_id: int) -> torch.device:
+  """Get the device of a specific layer in the model.
+  
+  When using device_map="auto", different layers may be on different devices.
+  This returns the device where the specified layer is located.
+  """
+  layer = model.model.layers[layer_id]
+  if hasattr(layer, 'weight'):
+    return layer.weight.device
+  else:
+    return next(layer.parameters()).device
+
+
 def get_dims(llm: PreTrainedModel, sae: Optional[SAE] = None) -> tuple[int, int]:
   latent_dim = getattr(llm.config, "hidden_size", None) or getattr(
     llm.config, "n_embd", None
