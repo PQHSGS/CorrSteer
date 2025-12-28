@@ -78,12 +78,12 @@ def fix_seed(seed: int = 42) -> int:
 
 
 def get_device() -> str:
-  # Check MPS first, as it's typically only available on Mac
-  if torch.backends.mps.is_available():
-    return "mps"
-  # Use auto for CUDA to enable distributed GPU usage
+  # Prefer CUDA with auto for distributed GPU usage
   if torch.cuda.is_available():
     return "auto"
+  # Fall back to MPS if available (Mac systems)
+  if torch.backends.mps.is_available():
+    return "mps"
   return "cpu"
 
 
@@ -102,8 +102,31 @@ def get_layer_device(model: PreTrainedModel, layer_id: int) -> torch.device:
   
   When using device_map="auto", different layers may be on different devices.
   This returns the device where the specified layer is located.
+  
+  Args:
+    model: The model containing the layers
+    layer_id: The index of the layer
+    
+  Returns:
+    The device where the layer is located
+    
+  Raises:
+    AttributeError: If the model structure doesn't match expected format
   """
-  layer = model.model.layers[layer_id]
+  try:
+    # Try standard transformer structure
+    layer = model.model.layers[layer_id]
+  except AttributeError:
+    # Fallback for different model structures
+    try:
+      layer = model.transformer.h[layer_id]
+    except AttributeError:
+      # If neither works, raise with helpful message
+      raise AttributeError(
+        f"Could not access layer {layer_id}. Model structure not recognized. "
+        f"Expected model.model.layers or model.transformer.h"
+      )
+  
   if hasattr(layer, 'weight'):
     return layer.weight.device
   else:
