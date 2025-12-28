@@ -78,9 +78,13 @@ def fix_seed(seed: int = 42) -> int:
 
 
 def get_device() -> str:
-  device = "auto" if torch.cuda.is_available() else "cpu"
-  device = "mps" if torch.backends.mps.is_available() else device
-  return device
+  # Check MPS first, as it's typically only available on Mac
+  if torch.backends.mps.is_available():
+    return "mps"
+  # Use auto for CUDA to enable distributed GPU usage
+  if torch.cuda.is_available():
+    return "auto"
+  return "cpu"
 
 
 def get_model_device(model: PreTrainedModel) -> torch.device:

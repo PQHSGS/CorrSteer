@@ -860,6 +860,10 @@ class CorrSteerController:
       else:
         # Use SAE encoding
         sae, _, _ = load_sae(cfg.model, layer, self.device)
+        # If device is "auto", move SAE to the same device as the corresponding model layer
+        if self.device == "auto":
+          layer_device = llm.model.layers[layer].weight.device if hasattr(llm.model.layers[layer], 'weight') else next(llm.model.layers[layer].parameters()).device
+          sae = sae.to(layer_device)
         _, dict_size = get_dims(llm, sae)
         self.saes[layer] = sae
         feature_dim = dict_size
