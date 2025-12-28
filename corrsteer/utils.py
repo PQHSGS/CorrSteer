@@ -77,10 +77,10 @@ def fix_seed(seed: int = 42) -> int:
   return seed
 
 
-def get_device() -> str:
-  device = "cuda" if torch.cuda.is_available() else "cpu"
-  device = "mps" if torch.backends.mps.is_available() else device
-  return device
+def get_device() -> torch.device:
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    return torch.device(f"cuda:{local_rank}")
+
 
 
 def get_dims(llm: PreTrainedModel, sae: Optional[SAE] = None) -> tuple[int, int]:
