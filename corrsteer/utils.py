@@ -78,9 +78,59 @@ def fix_seed(seed: int = 42) -> int:
 
 
 def get_device() -> str:
-  device = "cuda" if torch.cuda.is_available() else "cpu"
-  device = "mps" if torch.backends.mps.is_available() else device
-  return device
+  # Prefer CUDA with auto for distributed GPU usage
+  if torch.cuda.is_available():
+    return "auto"
+  # Fall back to MPS if available (Mac systems)
+  if torch.backends.mps.is_available():
+    return "mps"
+  return "cpu"
+
+
+def get_model_device(model: PreTrainedModel) -> torch.device:
+  """Get the device of the model's first parameter.
+  
+  When using device_map="auto", the model may be split across devices.
+  This returns the device of the first parameter, which is where input
+  tensors should typically be placed.
+  """
+  return next(model.parameters()).device
+
+
+def get_layer_device(model: PreTrainedModel, layer_id: int) -> torch.device:
+  """Get the device of a specific layer in the model.
+  
+  When using device_map="auto", different layers may be on different devices.
+  This returns the device where the specified layer is located.
+  
+  Args:
+    model: The model containing the layers
+    layer_id: The index of the layer
+    
+  Returns:
+    The device where the layer is located
+    
+  Raises:
+    AttributeError: If the model structure doesn't match expected format
+  """
+  try:
+    # Try standard transformer structure
+    layer = model.model.layers[layer_id]
+  except AttributeError:
+    # Fallback for different model structures
+    try:
+      layer = model.transformer.h[layer_id]
+    except AttributeError:
+      # If neither works, raise with helpful message
+      raise AttributeError(
+        f"Could not access layer {layer_id}. Model structure not recognized. "
+        f"Expected model.model.layers or model.transformer.h"
+      )
+  
+  if hasattr(layer, 'weight'):
+    return layer.weight.device
+  else:
+    return next(layer.parameters()).device
 
 
 def get_dims(llm: PreTrainedModel, sae: Optional[SAE] = None) -> tuple[int, int]:
@@ -104,7 +154,10 @@ def load_sae(
     release=model_config[model].release,
     sae_id=model_config[model].id_template.format(layer),
   )
-  return sae.to(device), cfg_dict, sparsity
+  # Only move to device if not "auto" - "auto" means device_map will handle it
+  if device != "auto":
+    sae = sae.to(device)
+  return sae, cfg_dict, sparsity
 
 
 def build_prompt(sample: SampleData, task: str, cot: bool = False, few_shots: Optional[List[SampleData]] = None) -> tuple[str, str]:

@@ -16,6 +16,8 @@ from corrsteer.utils import (
   load_model_tokenizer,
   load_dataloaders,
   get_device,
+  get_model_device,
+  get_layer_device,
   fix_seed,
   generate_options,
   get_logit_processor,
@@ -531,11 +533,13 @@ class CorrSteerController:
     few_shots = None
     if self.config.few is not None and self.config.few > 0:
       few_shots = train_loader.get_last_samples(self.config.few)
+    # Get actual device from model when using device_map="auto"
+    actual_device = get_model_device(self.llm) if self.device == "auto" else self.device
     for sample in val_loader:
       prompt, gt = build_prompt(sample, self.config.task, cot=self.config.cot, few_shots=few_shots)
       inputs = self.tokenizer([prompt], return_tensors="pt", padding=True, truncation=True)
-      input_ids = inputs.input_ids.to(self.device)
-      attention_mask = inputs.attention_mask.to(self.device)
+      input_ids = inputs.input_ids.to(actual_device)
+      attention_mask = inputs.attention_mask.to(actual_device)
       with torch.no_grad():
         generated_ids = cast(torch.Tensor, self.llm.generate(
         input_ids, attention_mask=attention_mask, max_new_tokens=max_new_tokens,
@@ -569,14 +573,17 @@ class CorrSteerController:
     if self.config.few is not None and self.config.few > 0:
       few_shots = train_loader.get_last_samples(self.config.few)
     
+    # Get actual device from model when using device_map="auto"
+    actual_device = get_model_device(self.llm) if self.device == "auto" else self.device
+    
     correct = 0
     total = 0
     sample_idx = 0
     for sample in val_loader:
       prompt, gt = build_prompt(sample, self.config.task, cot=self.config.cot, few_shots=few_shots)
       inputs = self.tokenizer([prompt], return_tensors="pt", padding=True, truncation=True)
-      input_ids = inputs.input_ids.to(self.device)
-      attention_mask = inputs.attention_mask.to(self.device)
+      input_ids = inputs.input_ids.to(actual_device)
+      attention_mask = inputs.attention_mask.to(actual_device)
       handle = self.llm.model.layers[layer].register_forward_pre_hook(hook)
       with torch.no_grad():
         generated_ids = cast(torch.Tensor, self.llm.generate(
@@ -675,6 +682,9 @@ class CorrSteerController:
     batch_samples: List = []
     progress_bar = tqdm(total=self.config.num_samples, desc="Collecting correlations", unit="samples")
     
+    # Get actual device from model when using device_map="auto"
+    actual_device = get_model_device(self.llm) if self.device == "auto" else self.device
+    
     for sample in tqdm(train_loader, desc="Processing batches", leave=False):
       batch_samples.append(sample)
       if len(batch_samples) < batch_size:
@@ -685,8 +695,8 @@ class CorrSteerController:
         break
       prompts, gts = zip(*[build_prompt(s, self.config.task, cot=False, few_shots=None) for s in batch])
       inputs = self.tokenizer(list(prompts), return_tensors="pt", padding=True, truncation=True)
-      input_ids = inputs.input_ids.to(self.device)
-      attention_mask = inputs.attention_mask.to(self.device)
+      input_ids = inputs.input_ids.to(actual_device)
+      attention_mask = inputs.attention_mask.to(actual_device)
       capture_hooks = {layer: ActivationCaptureHook(self.saes[layer] if not self.config.raw else None, self.config.mask, self.config.raw) for layer in self.layers}
       handles = {layer: self.llm.model.layers[layer].register_forward_pre_hook(capture_hooks[layer]) for layer in self.layers}
       with torch.no_grad():
@@ -705,7 +715,7 @@ class CorrSteerController:
       sliced = [generated_ids[i, offset:] for i, offset in enumerate(offsets)]
       generated_texts = self.tokenizer.batch_decode(sliced, skip_special_tokens=True)
       rewards = self._compute_rewards(generated_texts, list(gts))
-      batch_y = torch.tensor(rewards, dtype=torch.float32, device=self.device)
+      batch_y = torch.tensor(rewards, dtype=torch.float32, device=actual_device)
       for layer in self.layers:
         capture_hook = capture_hooks[layer]
         if capture_hook.buffer is None:
@@ -759,8 +769,8 @@ class CorrSteerController:
       batch = batch_samples
       prompts, gts = zip(*[build_prompt(s, self.config.task, cot=False, few_shots=None) for s in batch])
       inputs = self.tokenizer(list(prompts), return_tensors="pt", padding=True, truncation=True)
-      input_ids = inputs.input_ids.to(self.device)
-      attention_mask = inputs.attention_mask.to(self.device)
+      input_ids = inputs.input_ids.to(actual_device)
+      attention_mask = inputs.attention_mask.to(actual_device)
       capture_hooks = {layer: ActivationCaptureHook(self.saes[layer] if not self.config.raw else None, self.config.mask, self.config.raw) for layer in self.layers}
       handles = {layer: self.llm.model.layers[layer].register_forward_pre_hook(capture_hooks[layer]) for layer in self.layers}
       with torch.no_grad():
@@ -779,7 +789,7 @@ class CorrSteerController:
       sliced = [generated_ids[i, offset:] for i, offset in enumerate(offsets)]
       generated_texts = self.tokenizer.batch_decode(sliced, skip_special_tokens=True)
       rewards = self._compute_rewards(generated_texts, list(gts))
-      batch_y = torch.tensor(rewards, dtype=torch.float32, device=self.device)
+      batch_y = torch.tensor(rewards, dtype=torch.float32, device=actual_device)
       for layer in self.layers:
         capture_hook = capture_hooks[layer]
         if capture_hook.buffer is not None:
@@ -851,6 +861,9 @@ class CorrSteerController:
       else:
         # Use SAE encoding
         sae, _, _ = load_sae(cfg.model, layer, self.device)
+        # If device is "auto", move SAE to the same device as the corresponding model layer
+        if self.device == "auto":
+          sae = sae.to(get_layer_device(llm, layer))
         _, dict_size = get_dims(llm, sae)
         self.saes[layer] = sae
         feature_dim = dict_size

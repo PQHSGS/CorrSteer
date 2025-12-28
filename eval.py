@@ -18,6 +18,8 @@ from corrsteer.utils import (
   load_model_tokenizer,
   build_prompt,
   get_device,
+  get_model_device,
+  get_layer_device,
   fix_seed,
   load_dataloaders,
   generate_options,
@@ -101,8 +103,10 @@ class EvalController:
     correct_answers = cast(list[str], correct_answers)
     prompts = cast(list[str], prompts)
     inputs = self.tokenizer(prompts, return_tensors="pt", padding=True, truncation=True)
-    input_ids = inputs.input_ids.to(device)
-    attention_mask = inputs.attention_mask.to(device)
+    # Get actual device from model when using device_map="auto"
+    actual_device = get_model_device(self.llm) if device == "auto" else device
+    input_ids = inputs.input_ids.to(actual_device)
+    attention_mask = inputs.attention_mask.to(actual_device)
 
     self.hook_handles = []
     for layer in layers:
@@ -544,6 +548,9 @@ class EvalController:
         # SAE mode: load SAE if not provided
         if layer_id not in self.saes:
           sae_loaded, _, _ = load_sae(model, layer_id, device)
+          # If device is "auto", move SAE to the same device as the corresponding model layer
+          if device == "auto":
+            sae_loaded = sae_loaded.to(get_layer_device(llm, layer_id))
           self.saes[layer_id] = sae_loaded
         sae_inst = self.saes[layer_id]
         _, dict_size = get_dims(llm, sae_inst)
@@ -755,6 +762,9 @@ class EvalController:
           layer_id = int(layer_id)
           self.layers.append(layer_id)
           sae_loaded, _, _ = load_sae(model, layer_id, device)
+          # If device is "auto", move SAE to the same device as the corresponding model layer
+          if device == "auto":
+            sae_loaded = sae_loaded.to(get_layer_device(llm, layer_id))
           self.saes[layer_id] = sae_loaded
           _, dict_size = get_dims(llm, sae_loaded)
           selected = layer_data["selected"]
@@ -772,6 +782,9 @@ class EvalController:
           if feature_list in layer_data["analysis"]:
             self.layers.append(layer_id)
             sae_loaded, _, _ = load_sae(model, layer_id, device)
+            # If device is "auto", move SAE to the same device as the corresponding model layer
+            if device == "auto":
+              sae_loaded = sae_loaded.to(get_layer_device(llm, layer_id))
             self.saes[layer_id] = sae_loaded
             _, dict_size = get_dims(llm, sae_loaded)
             top_feature = layer_data["analysis"][feature_list][0]
@@ -802,6 +815,9 @@ class EvalController:
       if best_layer is not None:
         self.layers = [best_layer]
         sae_loaded, _, _ = load_sae(model, best_layer, device)
+        # If device is "auto", move SAE to the same device as the corresponding model layer
+        if device == "auto":
+          sae_loaded = sae_loaded.to(get_layer_device(llm, best_layer))
         self.saes[best_layer] = sae_loaded
         _, dict_size = get_dims(llm, sae_loaded)
         feat_idx = best_feature["feature_index"]
@@ -830,6 +846,9 @@ class EvalController:
         if layer_id not in self.layers:
           self.layers.append(layer_id)
           sae_loaded, _, _ = load_sae(model, layer_id, device)
+          # If device is "auto", move SAE to the same device as the corresponding model layer
+          if device == "auto":
+            sae_loaded = sae_loaded.to(get_layer_device(llm, layer_id))
           self.saes[layer_id] = sae_loaded
           _, dict_size = get_dims(llm, sae_loaded)
         
@@ -1027,6 +1046,9 @@ class EvalController:
       if layer not in self.layers:
         self.layers.append(layer)
         sae_loaded, _, _ = load_sae(model, layer, device)
+        # If device is "auto", move SAE to the same device as the corresponding model layer
+        if device == "auto":
+          sae_loaded = sae_loaded.to(get_layer_device(llm, layer))
         self.saes[layer] = sae_loaded
         _, dict_size = get_dims(llm, sae_loaded)
         print(f"Layer {layer}: Using feature {feat_idx} with coefficient {coeff:.4f}")
